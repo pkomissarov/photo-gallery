@@ -1,13 +1,15 @@
 {
-  "name": "indexer",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "name": "photo-gallery-indexer",
+  "version": "0.1.0",
+  "description": "Scans a photo directory and produces a static manifest + thumbnails consumed by the gallery frontend.",
+  "private": true,
+  "main": "indexer.js",
+  "bin": {
+    "indexer": "./indexer.js"
   },
-  "keywords": [],
-  "author": "",
+  "scripts": {
+    "start": "node indexer.js"
+  },
   "license": "ISC",
   "dependencies": {
     "exifr": "^7.1.3",
