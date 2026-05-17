@@ -4,18 +4,31 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { spawn } = require('node:child_process');
 const { performance } = require('node:perf_hooks');
 const sharp = require('sharp');
 const exifr = require('exifr');
 
-const PHOTO_EXTS = new Set(['.jpg', '.jpeg', '.png', '.heic', '.heif', '.webp']);
-const STATE_VERSION = 2;
+const MEDIA_EXTS = {
+  '.jpg':  { priority: 0, kind: 'photo' },
+  '.jpeg': { priority: 0, kind: 'photo' },
+  '.png':  { priority: 1, kind: 'photo' },
+  '.webp': { priority: 2, kind: 'photo' },
+  '.heic': { priority: 3, kind: 'photo' },
+  '.heif': { priority: 3, kind: 'photo' },
+  '.gif':  { priority: 4, kind: 'photo' },
+  '.mov':  { priority: 5, kind: 'video' },
+  '.mp4':  { priority: 5, kind: 'video' },
+  '.m4v':  { priority: 5, kind: 'video' },
+  '.3gp':  { priority: 5, kind: 'video' },
+};
+
+const STATE_VERSION = 6;
 const CONCURRENCY = 8;
 
 const DEFAULTS = {
-  thumbSize: 320,
-  previewSize: 1600,
-  quality: 78,
+  thumbSizes: [256, 512, 1024, 2048],
+  quality: 82,
 };
 
 function parseArgs(argv) {
@@ -26,13 +39,13 @@ function parseArgs(argv) {
     switch (a) {
       case '--input': opts.input = path.resolve(v); i++; break;
       case '--output': opts.output = path.resolve(v); i++; break;
-      case '--thumb-size': opts.thumbSize = parseInt(v, 10); i++; break;
-      case '--preview-size': opts.previewSize = parseInt(v, 10); i++; break;
+      case '--thumb-sizes':
+        opts.thumbSizes = v.split(',').map((s) => parseInt(s.trim(), 10)).filter(Boolean);
+        i++; break;
       case '--quality': opts.quality = parseInt(v, 10); i++; break;
       case '--help':
       case '-h':
-        printUsage();
-        process.exit(0);
+        printUsage(); process.exit(0);
       default:
         if (a.startsWith('--')) {
           console.error(`Unknown flag: ${a}`);
@@ -41,10 +54,8 @@ function parseArgs(argv) {
         }
     }
   }
-  if (!opts.input || !opts.output) {
-    printUsage();
-    process.exit(2);
-  }
+  if (!opts.input || !opts.output) { printUsage(); process.exit(2); }
+  opts.thumbSizes = [...new Set(opts.thumbSizes)].sort((a, b) => a - b);
   return opts;
 }
 
@@ -53,14 +64,17 @@ function printUsage() {
     'Usage: indexer.js --input <dir> --output <dir> [options]',
     '',
     'Options:',
-    '  --thumb-size N      Grid thumbnail long edge in px (default 320)',
-    '  --preview-size N    Lightbox preview long edge in px (default 1600)',
-    '  --quality N         WebP quality 1-100 (default 78)',
+    '  --thumb-sizes A,B,C  Comma-separated long-edge sizes (default 256,512,1024,2048)',
+    '  --quality N          WebP quality 1-100 (default 82)',
   ].join('\n'));
 }
 
+function getMediaInfo(filename) {
+  return MEDIA_EXTS[path.extname(filename).toLowerCase()] || null;
+}
+
 async function walk(root) {
-  const results = [];
+  const groups = new Map();
   async function visit(dir) {
     let entries;
     try {
@@ -74,13 +88,27 @@ async function walk(root) {
       const abs = path.join(dir, ent.name);
       if (ent.isDirectory()) {
         await visit(abs);
-      } else if (ent.isFile() && PHOTO_EXTS.has(path.extname(ent.name).toLowerCase())) {
-        results.push({ abs, rel: path.relative(root, abs) });
+        continue;
       }
+      if (!ent.isFile()) continue;
+      const info = getMediaInfo(ent.name);
+      if (!info) continue;
+      const rel = path.relative(root, abs);
+      const groupKey = `${path.dirname(rel)}\0${path.parse(rel).name.toLowerCase()}`;
+      if (!groups.has(groupKey)) groups.set(groupKey, []);
+      groups.get(groupKey).push({ abs, rel, info });
     }
   }
   await visit(root);
-  return results;
+
+  const results = [];
+  let droppedDupes = 0;
+  for (const files of groups.values()) {
+    if (files.length > 1) droppedDupes += files.length - 1;
+    files.sort((a, b) => a.info.priority - b.info.priority);
+    results.push(files[0]);
+  }
+  return { files: results, droppedDupes };
 }
 
 function stableId(relPath) {
@@ -92,7 +120,7 @@ async function readStat(absPath) {
   return { mtime: Math.floor(s.mtimeMs), size: s.size };
 }
 
-async function readMeta(buf) {
+async function readExif(buf) {
   try {
     return await exifr.parse(buf, {
       pick: ['DateTimeOriginal', 'CreateDate', 'GPSLatitude', 'GPSLongitude',
@@ -104,26 +132,69 @@ async function readMeta(buf) {
   }
 }
 
-async function generateDerivatives(buf, id, opts) {
-  const thumbPath = path.join(opts.output, 'thumbs', `${id}.webp`);
-  const previewPath = path.join(opts.output, 'previews', `${id}.webp`);
+async function makeDerivativesFromBuffer(buf, id, opts) {
   const baseMeta = await sharp(buf, { failOn: 'none' }).metadata();
-  const rotatedDims = (baseMeta.orientation && baseMeta.orientation >= 5)
+  const natural = (baseMeta.orientation && baseMeta.orientation >= 5)
     ? { width: baseMeta.height, height: baseMeta.width }
     : { width: baseMeta.width, height: baseMeta.height };
 
-  await Promise.all([
+  await Promise.all(opts.thumbSizes.map((size) =>
     sharp(buf, { failOn: 'none' }).rotate()
-      .resize(opts.thumbSize, opts.thumbSize, { fit: 'inside', withoutEnlargement: true })
+      .resize(size, size, { fit: 'inside', withoutEnlargement: true })
       .webp({ quality: opts.quality })
-      .toFile(thumbPath),
-    sharp(buf, { failOn: 'none' }).rotate()
-      .resize(opts.previewSize, opts.previewSize, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: opts.quality })
-      .toFile(previewPath),
-  ]);
+      .toFile(path.join(opts.output, 'thumbs', String(size), `${id}.webp`))
+  ));
 
-  return rotatedDims;
+  return { natural };
+}
+
+function ffmpegPoster(absPath) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let stderr = '';
+    const proc = spawn('ffmpeg', [
+      '-ss', '0.5',
+      '-i', absPath,
+      '-vframes', '1', '-an',
+      '-f', 'image2pipe', '-vcodec', 'mjpeg', '-q:v', '2',
+      '-',
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    proc.stdout.on('data', (c) => chunks.push(c));
+    proc.stderr.on('data', (c) => stderr += c);
+    proc.on('error', reject);
+    proc.on('close', (code) => {
+      if (code === 0 && chunks.length) resolve(Buffer.concat(chunks));
+      else reject(new Error(`ffmpeg exit ${code}: ${stderr.slice(-400)}`));
+    });
+  });
+}
+
+function ffprobeMeta(absPath) {
+  return new Promise((resolve) => {
+    const proc = spawn('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'stream=width,height:format=duration:format_tags=creation_time',
+      '-of', 'json',
+      absPath,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    proc.stdout.on('data', (c) => out += c);
+    proc.on('error', () => resolve({}));
+    proc.on('close', (code) => {
+      if (code !== 0) return resolve({});
+      try {
+        const data = JSON.parse(out);
+        const stream = (data.streams || []).find((s) => s.width && s.height) || {};
+        const tags = (data.format && data.format.tags) || {};
+        resolve({
+          width: stream.width || null,
+          height: stream.height || null,
+          duration: data.format && parseFloat(data.format.duration) || null,
+          creationTime: tags.creation_time || null,
+        });
+      } catch (_) { resolve({}); }
+    });
+  });
 }
 
 function formatShutter(sec) {
@@ -137,28 +208,26 @@ function dateFromExif(exif, fallbackMtime) {
   return new Date(fallbackMtime).toISOString();
 }
 
-async function processOne(file, state, opts) {
-  const stat = await readStat(file.abs);
-  const cached = state.entries[file.rel];
-
-  if (cached && cached.mtime === stat.mtime && cached.size === stat.size) {
-    return { ...cached.meta, _cached: true };
+function dateFromVideo(probe, fallbackMtime) {
+  if (probe.creationTime) {
+    const d = new Date(probe.creationTime);
+    if (!isNaN(d.getTime())) return d.toISOString();
   }
+  return new Date(fallbackMtime).toISOString();
+}
 
+async function processPhoto(file, stat, opts) {
   const id = stableId(file.rel);
   const buf = await fs.readFile(file.abs);
-  const [exif, dims] = await Promise.all([
-    readMeta(buf),
-    generateDerivatives(buf, id, opts),
-  ]);
-
-  const meta = {
+  const [exif, dims] = await Promise.all([readExif(buf), makeDerivativesFromBuffer(buf, id, opts)]);
+  return {
     id,
     path: file.rel,
     filename: path.basename(file.rel),
     album: path.dirname(file.rel) === '.' ? '' : path.dirname(file.rel),
-    width: dims.width,
-    height: dims.height,
+    kind: 'photo',
+    width: dims.natural.width,
+    height: dims.natural.height,
     size: stat.size,
     date: dateFromExif(exif, stat.mtime),
     camera: [exif.Make, exif.Model].filter(Boolean).join(' ').trim() || null,
@@ -169,15 +238,46 @@ async function processOne(file, state, opts) {
     gps: (exif.GPSLatitude != null && exif.GPSLongitude != null)
       ? [exif.GPSLatitude, exif.GPSLongitude] : null,
   };
+}
 
+async function processVideo(file, stat, opts) {
+  const id = stableId(file.rel);
+  const [posterBuf, probe] = await Promise.all([
+    ffmpegPoster(file.abs),
+    ffprobeMeta(file.abs),
+  ]);
+  const dims = await makeDerivativesFromBuffer(posterBuf, id, opts);
+  return {
+    id,
+    path: file.rel,
+    filename: path.basename(file.rel),
+    album: path.dirname(file.rel) === '.' ? '' : path.dirname(file.rel),
+    kind: 'video',
+    width: dims.natural.width,
+    height: dims.natural.height,
+    size: stat.size,
+    duration: probe.duration || null,
+    date: dateFromVideo(probe, stat.mtime),
+    camera: null, iso: null, aperture: null, shutter: null, focalLength: null, gps: null,
+  };
+}
+
+async function processOne(file, state, opts) {
+  const stat = await readStat(file.abs);
+  const cached = state.entries[file.rel];
+  if (cached && cached.mtime === stat.mtime && cached.size === stat.size) {
+    return { ...cached.meta, _cached: true };
+  }
+  const meta = file.info.kind === 'video'
+    ? await processVideo(file, stat, opts)
+    : await processPhoto(file, stat, opts);
   state.entries[file.rel] = { mtime: stat.mtime, size: stat.size, meta };
   return meta;
 }
 
 async function pmap(arr, fn, concurrency, onProgress) {
   const result = new Array(arr.length);
-  let idx = 0;
-  let done = 0;
+  let idx = 0, done = 0;
   async function worker() {
     while (true) {
       const i = idx++;
@@ -191,18 +291,27 @@ async function pmap(arr, fn, concurrency, onProgress) {
   return result;
 }
 
+function configFingerprint(opts) {
+  return `${opts.thumbSizes.join(',')}@q${opts.quality}`;
+}
+
 async function loadState(opts) {
   const statePath = path.join(opts.output, '.cache', 'state.json');
+  const fp = configFingerprint(opts);
   try {
     const raw = await fs.readFile(statePath, 'utf8');
     const data = JSON.parse(raw);
-    if (data.version === STATE_VERSION) return data;
+    if (data.version === STATE_VERSION && data.config === fp) return data;
+    console.log(`Config changed (${data.config || 'v' + data.version} → ${fp}); wiping derivatives`);
+    await fs.rm(path.join(opts.output, 'thumbs'), { recursive: true, force: true });
+    await fs.rm(path.join(opts.output, 'previews'), { recursive: true, force: true });
   } catch (_) { /* fall through */ }
-  return { version: STATE_VERSION, entries: {} };
+  return { version: STATE_VERSION, config: fp, entries: {} };
 }
 
 async function saveState(state, opts) {
   const statePath = path.join(opts.output, '.cache', 'state.json');
+  state.config = configFingerprint(opts);
   await fs.mkdir(path.dirname(statePath), { recursive: true });
   await fs.writeFile(statePath, JSON.stringify(state));
 }
@@ -212,8 +321,9 @@ async function cleanupOrphans(seenPaths, state, opts) {
   for (const rel of Object.keys(state.entries)) {
     if (seenPaths.has(rel)) continue;
     const id = state.entries[rel].meta.id;
-    await fs.rm(path.join(opts.output, 'thumbs', `${id}.webp`), { force: true });
-    await fs.rm(path.join(opts.output, 'previews', `${id}.webp`), { force: true });
+    await Promise.all(opts.thumbSizes.map((size) =>
+      fs.rm(path.join(opts.output, 'thumbs', String(size), `${id}.webp`), { force: true })
+    ));
     delete state.entries[rel];
     removed++;
   }
@@ -231,23 +341,24 @@ function logProgress(done, total) {
 async function main() {
   const opts = parseArgs(process.argv);
 
-  await fs.mkdir(path.join(opts.output, 'thumbs'), { recursive: true });
-  await fs.mkdir(path.join(opts.output, 'previews'), { recursive: true });
+  const state = await loadState(opts);
+  for (const size of opts.thumbSizes) {
+    await fs.mkdir(path.join(opts.output, 'thumbs', String(size)), { recursive: true });
+  }
 
-  console.log(`Scanning ${opts.input}`);
-  const files = await walk(opts.input);
-  console.log(`Found ${files.length} media files`);
+  console.log(`Scanning ${opts.input} (sizes: ${opts.thumbSizes.join(', ')})`);
+  const { files, droppedDupes } = await walk(opts.input);
+  console.log(`Found ${files.length} media items` + (droppedDupes ? ` (${droppedDupes} dropped as dupes)` : ''));
   if (files.length === 0) return;
 
-  const state = await loadState(opts);
-
   const t0 = performance.now();
-  let cachedCount = 0, newCount = 0, failCount = 0;
+  let cachedCount = 0, newCount = 0, failCount = 0, videoCount = 0;
 
   const results = await pmap(files, async (file) => {
     try {
       const meta = await processOne(file, state, opts);
       if (meta._cached) cachedCount++; else newCount++;
+      if (meta.kind === 'video') videoCount++;
       const { _cached, ...clean } = meta;
       return clean;
     } catch (err) {
@@ -257,27 +368,23 @@ async function main() {
     }
   }, CONCURRENCY, logProgress);
 
-  const photos = results.filter(Boolean).sort((a, b) => (b.date < a.date ? -1 : 1));
-
+  const items = results.filter(Boolean).sort((a, b) => (b.date < a.date ? -1 : 1));
   const seen = new Set(files.map(f => f.rel));
   const orphans = await cleanupOrphans(seen, state, opts);
 
   const manifest = {
     generated: new Date().toISOString(),
-    count: photos.length,
-    photos,
+    count: items.length,
+    photos: items,
   };
 
-  await fs.writeFile(
-    path.join(opts.output, 'manifest.json'),
-    JSON.stringify(manifest)
-  );
+  await fs.writeFile(path.join(opts.output, 'manifest.json'), JSON.stringify(manifest));
   await saveState(state, opts);
 
   const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
   console.log(
     `Done in ${elapsed}s: ${newCount} new, ${cachedCount} cached, ` +
-    `${failCount} failed, ${orphans} orphans cleaned`
+    `${failCount} failed, ${videoCount} videos, ${orphans} orphans cleaned`
   );
 }
 
