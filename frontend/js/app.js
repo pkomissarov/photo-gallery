@@ -115,15 +115,40 @@ function initLightbox() {
     if (v) v.pause();
   });
 
+  lightbox.on('uiRegister', () => {
+    lightbox.pswp.ui.registerElement({
+      name: 'open-original',
+      order: 9,
+      isButton: true,
+      tagName: 'a',
+      html: {
+        isCustomSVG: true,
+        inner: '<path d="M22 12V8h-4M22 8l-7 7M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+        outlineID: 'pswp__icn-open-original',
+      },
+      onInit: (el, pswp) => {
+        el.setAttribute('target', '_blank');
+        el.setAttribute('rel', 'noreferrer');
+        el.setAttribute('title', 'Открыть оригинал в новой вкладке');
+        pswp.on('change', () => {
+          const url = pswp.currSlide && pswp.currSlide.data && pswp.currSlide.data.originalUrl;
+          el.href = url || '#';
+        });
+      },
+    });
+  });
+
   lightbox.init();
 }
 
 function toSlide(p) {
   const lbDims = clampDims(p.width, p.height, LIGHTBOX_MAX);
+  const original = `${ORIGINALS_PREFIX}${encodePath(p.path)}`;
   if (p.kind === 'video') {
     return {
       type: 'video',
-      videoSrc: `${ORIGINALS_PREFIX}${encodePath(p.path)}`,
+      videoSrc: original,
+      originalUrl: original,
       width: lbDims.width,
       height: lbDims.height,
     };
@@ -131,6 +156,7 @@ function toSlide(p) {
   return {
     src: thumbSrc(p, LIGHTBOX_MAX),
     srcset: thumbSrcset(p, LIGHTBOX_SIZES),
+    originalUrl: original,
     width: lbDims.width,
     height: lbDims.height,
   };

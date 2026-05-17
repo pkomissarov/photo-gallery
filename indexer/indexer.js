@@ -21,6 +21,15 @@ const MEDIA_EXTS = {
   '.mp4':  { priority: 5, kind: 'video' },
   '.m4v':  { priority: 5, kind: 'video' },
   '.3gp':  { priority: 5, kind: 'video' },
+  '.dng':  { priority: 6, kind: 'raw' },
+  '.cr2':  { priority: 6, kind: 'raw' },
+  '.cr3':  { priority: 6, kind: 'raw' },
+  '.crw':  { priority: 6, kind: 'raw' },
+  '.nef':  { priority: 6, kind: 'raw' },
+  '.arw':  { priority: 6, kind: 'raw' },
+  '.raf':  { priority: 6, kind: 'raw' },
+  '.orf':  { priority: 6, kind: 'raw' },
+  '.rw2':  { priority: 6, kind: 'raw' },
 };
 
 const STATE_VERSION = 6;
@@ -29,6 +38,7 @@ const CONCURRENCY = 8;
 const DEFAULTS = {
   thumbSizes: [256, 512, 1024, 2048],
   quality: 82,
+  albumDepth: 1,
 };
 
 function parseArgs(argv) {
@@ -43,6 +53,7 @@ function parseArgs(argv) {
         opts.thumbSizes = v.split(',').map((s) => parseInt(s.trim(), 10)).filter(Boolean);
         i++; break;
       case '--quality': opts.quality = parseInt(v, 10); i++; break;
+      case '--album-depth': opts.albumDepth = parseInt(v, 10); i++; break;
       case '--help':
       case '-h':
         printUsage(); process.exit(0);
@@ -66,6 +77,10 @@ function printUsage() {
     'Options:',
     '  --thumb-sizes A,B,C  Comma-separated long-edge sizes (default 256,512,1024,2048)',
     '  --quality N          WebP quality 1-100 (default 82)',
+    '  --album-depth N      Group scope for cross-format dedup. 1 = first path',
+    '                       segment under input is an album (default, for runs',
+    '                       on the full library). 0 = entire input is one album',
+    '                       (use when indexing a single album).',
   ].join('\n'));
 }
 
@@ -73,8 +88,16 @@ function getMediaInfo(filename) {
   return MEDIA_EXTS[path.extname(filename).toLowerCase()] || null;
 }
 
-async function walk(root) {
-  const groups = new Map();
+function albumKey(rel, depth) {
+  if (depth <= 0) return '';
+  const parts = rel.split('/');
+  // parts.length includes the filename; need at least depth+1 segments for an album
+  if (parts.length <= depth) return '';
+  return parts.slice(0, depth).join('/');
+}
+
+async function walk(root, albumDepth) {
+  const all = [];
   async function visit(dir) {
     let entries;
     try {
@@ -93,22 +116,37 @@ async function walk(root) {
       if (!ent.isFile()) continue;
       const info = getMediaInfo(ent.name);
       if (!info) continue;
-      const rel = path.relative(root, abs);
-      const groupKey = `${path.dirname(rel)}\0${path.parse(rel).name.toLowerCase()}`;
-      if (!groups.has(groupKey)) groups.set(groupKey, []);
-      groups.get(groupKey).push({ abs, rel, info });
+      all.push({ abs, rel: path.relative(root, abs), info });
     }
   }
   await visit(root);
 
-  const results = [];
-  let droppedDupes = 0;
-  for (const files of groups.values()) {
-    if (files.length > 1) droppedDupes += files.length - 1;
-    files.sort((a, b) => a.info.priority - b.info.priority);
-    results.push(files[0]);
+  // Cross-format dedup: within each (album, basename) group, drop entries above
+  // the min priority. Equal-priority entries are all kept (e.g., same-basename
+  // JPGs in different sub-folders are distinct photos from camera counter wrap).
+  // Album scope is controlled by albumDepth (0 = whole input is one album).
+  const minPriority = new Map();
+  for (const f of all) {
+    const base = path.parse(f.rel).name.toLowerCase();
+    const key = `${albumKey(f.rel, albumDepth)}\0${base}`;
+    const p = f.info.priority;
+    if (!minPriority.has(key) || minPriority.get(key) > p) {
+      minPriority.set(key, p);
+    }
   }
-  return { files: results, droppedDupes };
+
+  const kept = [];
+  let droppedDupes = 0;
+  for (const f of all) {
+    const base = path.parse(f.rel).name.toLowerCase();
+    const key = `${albumKey(f.rel, albumDepth)}\0${base}`;
+    if (f.info.priority === minPriority.get(key)) {
+      kept.push(f);
+    } else {
+      droppedDupes++;
+    }
+  }
+  return { files: kept, droppedDupes };
 }
 
 function stableId(relPath) {
@@ -167,6 +205,26 @@ function ffmpegPoster(absPath) {
       else reject(new Error(`ffmpeg exit ${code}: ${stderr.slice(-400)}`));
     });
   });
+}
+
+function runExiftool(args) {
+  return new Promise((resolve) => {
+    const proc = spawn('exiftool', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const chunks = [];
+    proc.stdout.on('data', (c) => chunks.push(c));
+    proc.on('error', () => resolve(null));
+    proc.on('close', (code) => {
+      resolve(code === 0 ? Buffer.concat(chunks) : null);
+    });
+  });
+}
+
+async function extractRawPreview(absPath) {
+  for (const tag of ['JpgFromRaw', 'PreviewImage', 'OtherImage']) {
+    const buf = await runExiftool(['-b', `-${tag}`, absPath]);
+    if (buf && buf.length > 1024) return buf;
+  }
+  return null;
 }
 
 function ffprobeMeta(absPath) {
@@ -240,6 +298,34 @@ async function processPhoto(file, stat, opts) {
   };
 }
 
+async function processRaw(file, stat, opts) {
+  const id = stableId(file.rel);
+  const previewBuf = await extractRawPreview(file.abs);
+  if (!previewBuf) throw new Error('no embedded preview in RAW');
+  const [exif, dims] = await Promise.all([
+    readExif(previewBuf),
+    makeDerivativesFromBuffer(previewBuf, id, opts),
+  ]);
+  return {
+    id,
+    path: file.rel,
+    filename: path.basename(file.rel),
+    album: path.dirname(file.rel) === '.' ? '' : path.dirname(file.rel),
+    kind: 'photo',
+    width: dims.natural.width,
+    height: dims.natural.height,
+    size: stat.size,
+    date: dateFromExif(exif, stat.mtime),
+    camera: [exif.Make, exif.Model].filter(Boolean).join(' ').trim() || null,
+    iso: exif.ISO || null,
+    aperture: exif.FNumber || null,
+    shutter: exif.ExposureTime ? formatShutter(exif.ExposureTime) : null,
+    focalLength: exif.FocalLength || null,
+    gps: (exif.GPSLatitude != null && exif.GPSLongitude != null)
+      ? [exif.GPSLatitude, exif.GPSLongitude] : null,
+  };
+}
+
 async function processVideo(file, stat, opts) {
   const id = stableId(file.rel);
   const [posterBuf, probe] = await Promise.all([
@@ -268,9 +354,10 @@ async function processOne(file, state, opts) {
   if (cached && cached.mtime === stat.mtime && cached.size === stat.size) {
     return { ...cached.meta, _cached: true };
   }
-  const meta = file.info.kind === 'video'
-    ? await processVideo(file, stat, opts)
-    : await processPhoto(file, stat, opts);
+  let meta;
+  if (file.info.kind === 'video') meta = await processVideo(file, stat, opts);
+  else if (file.info.kind === 'raw') meta = await processRaw(file, stat, opts);
+  else meta = await processPhoto(file, stat, opts);
   state.entries[file.rel] = { mtime: stat.mtime, size: stat.size, meta };
   return meta;
 }
@@ -346,8 +433,8 @@ async function main() {
     await fs.mkdir(path.join(opts.output, 'thumbs', String(size)), { recursive: true });
   }
 
-  console.log(`Scanning ${opts.input} (sizes: ${opts.thumbSizes.join(', ')})`);
-  const { files, droppedDupes } = await walk(opts.input);
+  console.log(`Scanning ${opts.input} (sizes: ${opts.thumbSizes.join(', ')}, album-depth: ${opts.albumDepth})`);
+  const { files, droppedDupes } = await walk(opts.input, opts.albumDepth);
   console.log(`Found ${files.length} media items` + (droppedDupes ? ` (${droppedDupes} dropped as dupes)` : ''));
   if (files.length === 0) return;
 
