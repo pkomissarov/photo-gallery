@@ -355,15 +355,23 @@ function hydrateFromHash() {
 }
 
 function passes(p) {
+  return passesExcept(p, null);
+}
+
+// Same as passes() but skips the check for `exceptFacet` ('album' or 'date').
+// Used by the facet trees so each tree shows counts within the OTHER filters'
+// current state — clicking _iPhone_Pavel collapses the date tree to only the
+// years that album actually contains, etc.
+function passesExcept(p, exceptFacet) {
   const f = state.filter;
-  if (f.album) {
+  if (exceptFacet !== 'album' && f.album) {
     if (p.album !== f.album && !p.album.startsWith(f.album + '/')) return false;
   }
   if (f.search) {
     const q = f.search.toLowerCase();
     if (!p.filename.toLowerCase().includes(q) && !p.path.toLowerCase().includes(q)) return false;
   }
-  if (f.year || f.month) {
+  if (exceptFacet !== 'date' && (f.year || f.month)) {
     const d = new Date(p.date);
     if (f.year && String(d.getUTCFullYear()) !== f.year) return false;
     if (f.month && String(d.getUTCMonth() + 1).padStart(2, '0') !== f.month) return false;
@@ -395,13 +403,19 @@ function renderAll() {
 }
 
 function renderFacets() {
-  const albumRoot = buildHierarchy(state.photos, (p) => (p.album ? p.album.split('/') : []));
+  // Each tree is built from photos that pass every OTHER filter — the
+  // album tree narrows under the current date/search, and vice versa.
+  // Counts and visible nodes therefore reflect what's actually
+  // reachable from the current state.
+  const albumScope = state.photos.filter((p) => passesExcept(p, 'album'));
+  const albumRoot = buildHierarchy(albumScope, (p) => (p.album ? p.album.split('/') : []));
   const folderEl = $('folder-tree');
   folderEl.replaceChildren();
   folderEl.appendChild(treeItem('Все', '', albumRoot.count, 'album', state.filter.album === '', false, false));
   appendTreeChildren(folderEl, albumRoot, 'album', state.filter.album, [], '/', false);
 
-  const dateRoot = buildHierarchy(state.photos, (p) => {
+  const dateScope = state.photos.filter((p) => passesExcept(p, 'date'));
+  const dateRoot = buildHierarchy(dateScope, (p) => {
     const d = new Date(p.date);
     return [String(d.getUTCFullYear()), String(d.getUTCMonth() + 1).padStart(2, '0')];
   });
