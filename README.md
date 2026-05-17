@@ -2,7 +2,13 @@
 
 A static photo gallery for old NAS boxes — the kind that can't run Immich, PhotoPrism, or even Piwigo well. The heavy work happens once on a fast machine; the NAS just serves the resulting static files. Designed for libraries that have outgrown plain SMB but where running a real photo app is impractical.
 
-Tested at 49 843 photos / 1 824 videos / 95 albums (mix of iPhone HEIC, DSLR JPG+RAW, video clips) served from a Comcerto 2000 ARM CPU with 226 MB RAM running Debian Jessie.
+Tested at **49 843 photos / 1 824 videos / 95 albums** (mix of iPhone HEIC, DSLR JPG+RAW, video clips) served from a **WD My Cloud Gen 1** (Comcerto 2000 ARM, 226 MB RAM, Debian Jessie).
+
+Targets the same class of boxes that Immich/PhotoPrism won't touch:
+
+- **WD My Cloud Gen 1 / Gen 2** (256 MB RAM, ARMv7)
+- **Synology DS115j / DS120j** and other entry-level "j"-series (256–512 MB RAM, Marvell Armada)
+- Anything with ≥256 MB RAM that runs Apache, nginx, or lighttpd
 
 ## Table of contents
 
@@ -23,7 +29,7 @@ Tested at 49 843 photos / 1 824 videos / 95 albums (mix of iPhone HEIC, DSLR JPG
 
 ## Why this exists
 
-Most photo-gallery software assumes a real server: Immich and PhotoPrism want 2+ GB of RAM, ship their own database, lean on the GPU for ML. They're great on a NUC. They don't fit on a WD MyCloud Gen 2, a 1st-gen Synology, or anything with 256–512 MB of RAM and an ARM Cortex-A9.
+Most photo-gallery software assumes a real server: Immich and PhotoPrism want 2+ GB of RAM, ship their own database, lean on the GPU for ML. They're great on a NUC. They don't fit on a **WD My Cloud Gen 1**, a **Synology DS115j / DS120j**, or anything with 256–512 MB of RAM and an ARM Cortex-A9 / Marvell Armada from a decade ago.
 
 This project goes the other way — do every expensive thing on your laptop, then leave the NAS as a dumb static file server.
 
