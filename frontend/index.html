@@ -11,21 +11,25 @@
 </head>
 <body>
 <header class="topbar">
-  <button class="topbar__menu" id="menu-toggle" type="button" aria-label="Меню">
+  <button class="topbar__menu" id="menu-toggle" type="button" data-i18n-aria="menu" aria-label="Меню">
     <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
   </button>
   <h1 class="topbar__title" id="title-home" role="button" tabindex="0">Photos</h1>
-  <input class="topbar__search" type="search" id="search-input" placeholder="Поиск" autocomplete="off">
-  <div class="topbar__scale" role="group" aria-label="Размер плиток">
-    <button type="button" data-scale="small" aria-label="Мелкие плитки" title="Мелкие плитки">
+  <input class="topbar__search" type="search" id="search-input" data-i18n-placeholder="search" placeholder="Поиск" autocomplete="off">
+  <div class="topbar__scale" role="group" data-i18n-aria="scaleLabel" aria-label="Размер плиток">
+    <button type="button" data-scale="small" data-i18n-aria="scaleSmall" aria-label="Мелкие плитки" title="Мелкие плитки">
       <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><rect x="0" y="0" width="3" height="3"/><rect x="4.5" y="0" width="3" height="3"/><rect x="9" y="0" width="3" height="3"/><rect x="0" y="4.5" width="3" height="3"/><rect x="4.5" y="4.5" width="3" height="3"/><rect x="9" y="4.5" width="3" height="3"/><rect x="0" y="9" width="3" height="3"/><rect x="4.5" y="9" width="3" height="3"/><rect x="9" y="9" width="3" height="3"/></svg>
     </button>
-    <button type="button" data-scale="medium" aria-label="Средние плитки" title="Средние плитки">
+    <button type="button" data-scale="medium" data-i18n-aria="scaleMedium" aria-label="Средние плитки" title="Средние плитки">
       <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><rect x="0" y="0" width="5" height="5"/><rect x="7" y="0" width="5" height="5"/><rect x="0" y="7" width="5" height="5"/><rect x="7" y="7" width="5" height="5"/></svg>
     </button>
-    <button type="button" data-scale="large" aria-label="Крупные плитки" title="Крупные плитки">
+    <button type="button" data-scale="large" data-i18n-aria="scaleLarge" aria-label="Крупные плитки" title="Крупные плитки">
       <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><rect x="0" y="0" width="12" height="12"/></svg>
     </button>
+  </div>
+  <div class="topbar__lang" role="group" data-i18n-aria="langLabel" aria-label="Язык">
+    <button type="button" data-lang="ru">RU</button>
+    <button type="button" data-lang="en">EN</button>
   </div>
   <span class="topbar__count" id="count"></span>
 </header>
@@ -33,11 +37,11 @@
 <div class="layout">
   <aside class="sidebar" id="sidebar">
     <section class="facet">
-      <h2 class="facet__title">Папки</h2>
+      <h2 class="facet__title" data-i18n="facetAlbums">Папки</h2>
       <div class="tree" id="folder-tree"></div>
     </section>
     <section class="facet">
-      <h2 class="facet__title">По дате</h2>
+      <h2 class="facet__title" data-i18n="facetDates">По дате</h2>
       <div class="tree" id="date-tree"></div>
     </section>
   </aside>
@@ -45,7 +49,7 @@
   <main class="main">
     <nav class="breadcrumb" id="breadcrumb"></nav>
     <div class="grid" id="grid"></div>
-    <div class="empty" id="empty" hidden>Ничего не найдено</div>
+    <div class="empty" id="empty" data-i18n="empty" hidden>Ничего не найдено</div>
   </main>
 </div>
 

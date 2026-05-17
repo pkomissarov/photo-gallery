@@ -1,9 +1,59 @@
 import PhotoSwipeLightbox from '../vendor/photoswipe/photoswipe-lightbox.esm.min.js';
 
-const MONTHS = [
-  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
-];
+const I18N = {
+  ru: {
+    title: 'Photos',
+    search: 'Поиск',
+    menu: 'Меню',
+    scaleLabel: 'Размер плиток',
+    scaleSmall: 'Мелкие плитки',
+    scaleMedium: 'Средние плитки',
+    scaleLarge: 'Крупные плитки',
+    facetAlbums: 'Папки',
+    facetDates: 'По дате',
+    all: 'Все',
+    empty: 'Ничего не найдено',
+    openOriginal: 'Открыть оригинал в новой вкладке',
+    manifestError: 'Не удалось загрузить manifest.json',
+    langLabel: 'Язык',
+    months: [
+      'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+      'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+    ],
+  },
+  en: {
+    title: 'Photos',
+    search: 'Search',
+    menu: 'Menu',
+    scaleLabel: 'Tile size',
+    scaleSmall: 'Small tiles',
+    scaleMedium: 'Medium tiles',
+    scaleLarge: 'Large tiles',
+    facetAlbums: 'Folders',
+    facetDates: 'By date',
+    all: 'All',
+    empty: 'Nothing found',
+    openOriginal: 'Open original in a new tab',
+    manifestError: 'Could not load manifest.json',
+    langLabel: 'Language',
+    months: [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ],
+  },
+};
+const LANGS = ['ru', 'en'];
+const LANG_STORAGE_KEY = 'gallery.lang';
+let currentLang = 'ru';
+
+function t(key) {
+  return (I18N[currentLang] && I18N[currentLang][key])
+      ?? (I18N.ru[key] ?? key);
+}
+
+function monthName(monthNumber) {
+  return I18N[currentLang].months[monthNumber - 1] || String(monthNumber);
+}
 
 const ORIGINALS_PREFIX = 'originals/';
 const THUMB_SIZES = [256, 512, 1024, 2048];
@@ -65,6 +115,7 @@ function thumbSrcset(p, sizes) {
 }
 
 async function init() {
+  applyLang(loadLang());
   currentScale = loadScale();
   applyScale(currentScale);
   state.expanded = loadExpanded();
@@ -76,7 +127,7 @@ async function init() {
     manifest = await r.json();
   } catch (err) {
     $('empty').hidden = false;
-    $('empty').textContent = `Не удалось загрузить manifest.json: ${err.message}`;
+    $('empty').textContent = `${t('manifestError')}: ${err.message}`;
     return;
   }
 
@@ -132,7 +183,7 @@ function initLightbox() {
       onInit: (el, pswp) => {
         el.setAttribute('target', '_blank');
         el.setAttribute('rel', 'noreferrer');
-        el.setAttribute('title', 'Открыть оригинал в новой вкладке');
+        el.setAttribute('title', t('openOriginal'));
         pswp.on('change', () => {
           const url = pswp.currSlide && pswp.currSlide.data && pswp.currSlide.data.originalUrl;
           el.href = url || '#';
@@ -190,6 +241,14 @@ function bindEvents() {
     applyScale(currentScale);
     saveScale(currentScale);
     buildLayout();
+  });
+
+  document.querySelector('.topbar__lang').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-lang]');
+    if (!btn || btn.dataset.lang === currentLang) return;
+    applyLang(btn.dataset.lang);
+    saveLang(btn.dataset.lang);
+    renderAll();
   });
 
   $('grid').addEventListener('click', (e) => {
@@ -250,6 +309,39 @@ function toggleDrawer() {
 function closeDrawer() {
   $('sidebar').classList.remove('sidebar--open');
   $('backdrop').classList.remove('backdrop--open');
+}
+
+function loadLang() {
+  try {
+    const v = localStorage.getItem(LANG_STORAGE_KEY);
+    if (LANGS.includes(v)) return v;
+  } catch (_) { /* ignore */ }
+  const browser = (navigator.language || 'ru').slice(0, 2).toLowerCase();
+  return browser === 'en' ? 'en' : 'ru';
+}
+
+function saveLang(lang) {
+  try { localStorage.setItem(LANG_STORAGE_KEY, lang); } catch (_) { /* ignore */ }
+}
+
+function applyLang(lang) {
+  if (!LANGS.includes(lang)) lang = 'ru';
+  currentLang = lang;
+  document.documentElement.lang = lang;
+  for (const el of document.querySelectorAll('[data-i18n]')) {
+    el.textContent = t(el.dataset.i18n);
+  }
+  for (const el of document.querySelectorAll('[data-i18n-placeholder]')) {
+    el.placeholder = t(el.dataset.i18nPlaceholder);
+  }
+  for (const el of document.querySelectorAll('[data-i18n-aria]')) {
+    const v = t(el.dataset.i18nAria);
+    el.setAttribute('aria-label', v);
+    el.setAttribute('title', v);
+  }
+  document.querySelectorAll('.topbar__lang button').forEach((b) => {
+    b.setAttribute('aria-pressed', b.dataset.lang === lang ? 'true' : 'false');
+  });
 }
 
 function loadScale() {
@@ -411,7 +503,7 @@ function renderFacets() {
   const albumRoot = buildHierarchy(albumScope, (p) => (p.album ? p.album.split('/') : []));
   const folderEl = $('folder-tree');
   folderEl.replaceChildren();
-  folderEl.appendChild(treeItem('Все', '', albumRoot.count, 'album', state.filter.album === '', false, false));
+  folderEl.appendChild(treeItem(t('all'), '', albumRoot.count, 'album', state.filter.album === '', false, false));
   appendTreeChildren(folderEl, albumRoot, 'album', state.filter.album, [], '/', false);
 
   const dateScope = state.photos.filter((p) => passesExcept(p, 'date'));
@@ -424,7 +516,7 @@ function renderFacets() {
   const activeDateKey = state.filter.month
     ? `${state.filter.year}-${state.filter.month}`
     : state.filter.year;
-  dateEl.appendChild(treeItem('Все', '', dateRoot.count, 'date', !activeDateKey, false, false));
+  dateEl.appendChild(treeItem(t('all'), '', dateRoot.count, 'date', !activeDateKey, false, false));
   appendTreeChildren(dateEl, dateRoot, 'date', activeDateKey, [], '-', true);
 }
 
@@ -435,7 +527,7 @@ function appendTreeChildren(container, node, facet, activeKey, pathSoFar, sep, d
   for (const [seg, child] of entries) {
     const path = [...pathSoFar, seg];
     const key = path.join(sep);
-    const label = facet === 'date' && pathSoFar.length === 1 ? MONTHS[parseInt(seg, 10) - 1] : seg;
+    const label = facet === 'date' && pathSoFar.length === 1 ? monthName(parseInt(seg, 10)) : seg;
     const hasChildren = child.children.size > 0;
     const expanded = hasChildren && isExpanded(facet, key);
     container.appendChild(treeItem(label, key, child.count, facet, key === activeKey, hasChildren, expanded));
@@ -487,7 +579,7 @@ function renderBreadcrumb() {
     parts.push({ label: f.year, facet: 'date', key: f.year });
     if (f.month) {
       parts.push({
-        label: MONTHS[parseInt(f.month, 10) - 1],
+        label: monthName(parseInt(f.month, 10)),
         facet: 'date',
         key: `${f.year}-${f.month}`,
       });
@@ -501,7 +593,7 @@ function renderBreadcrumb() {
   const home = document.createElement('a');
   home.dataset.facet = 'album';
   home.dataset.key = '';
-  home.textContent = 'Все';
+  home.textContent = t('all');
   el.appendChild(home);
   parts.forEach((p) => {
     const sep = document.createElement('span');
@@ -529,6 +621,7 @@ function renderGrid() {
     const grid = $('grid');
     grid.replaceChildren();
     grid.style.height = '0px';
+    $('empty').textContent = t('empty');
     $('empty').hidden = false;
     window.scrollTo(0, 0);
     return;

@@ -95,13 +95,34 @@ a { color: inherit; }
 }
 .topbar__search:focus { border-color: var(--accent); }
 
-.topbar__scale {
+.topbar__scale,
+.topbar__lang {
   display: inline-flex;
-  margin-left: auto;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 2px;
+}
+.topbar__scale { margin-left: auto; }
+.topbar__lang button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  padding: 0.25rem 0.55rem;
+  font: 600 0.7rem/1 -apple-system, sans-serif;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  border-radius: 999px;
+  transition: background 0.15s, color 0.15s;
+}
+.topbar__lang button:hover { color: var(--fg); }
+.topbar__lang button[aria-pressed="true"] {
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 0 0 1px var(--border);
 }
 .topbar__scale button {
   display: inline-flex;
