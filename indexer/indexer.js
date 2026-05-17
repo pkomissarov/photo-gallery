@@ -3,6 +3,7 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const os = require('node:os');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { performance } = require('node:perf_hooks');
@@ -227,6 +228,44 @@ async function extractRawPreview(absPath) {
   return null;
 }
 
+function magickToJpeg(absPath) {
+  // ImageMagick handles HEIC variants (HEVC Main Still Picture Profile,
+  // newer iPhone encodings) that sharp's bundled libheif and macOS sips
+  // both refuse. magick can't write binary to stdout cleanly either, so
+  // we round-trip through a tmp file.
+  const tmpPath = path.join(os.tmpdir(),
+    `pg-heic-${process.pid}-${crypto.randomBytes(6).toString('hex')}.jpg`);
+  return new Promise((resolve, reject) => {
+    const proc = spawn('magick', [absPath, '-quality', '95', tmpPath],
+      { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    proc.stderr.on('data', (c) => stderr += c);
+    proc.on('error', reject);
+    proc.on('close', async (code) => {
+      if (code !== 0) {
+        await fs.rm(tmpPath, { force: true }).catch(() => {});
+        return reject(new Error(`magick exit ${code}: ${stderr.slice(-200)}`));
+      }
+      try {
+        const buf = await fs.readFile(tmpPath);
+        resolve(buf);
+      } catch (err) {
+        reject(err);
+      } finally {
+        await fs.rm(tmpPath, { force: true }).catch(() => {});
+      }
+    });
+  });
+}
+
+async function loadPhotoBuffer(absPath) {
+  const ext = path.extname(absPath).toLowerCase();
+  if (ext === '.heic' || ext === '.heif') {
+    return await magickToJpeg(absPath);
+  }
+  return await fs.readFile(absPath);
+}
+
 function ffprobeMeta(absPath) {
   return new Promise((resolve) => {
     const proc = spawn('ffprobe', [
@@ -276,7 +315,7 @@ function dateFromVideo(probe, fallbackMtime) {
 
 async function processPhoto(file, stat, opts) {
   const id = stableId(file.rel);
-  const buf = await fs.readFile(file.abs);
+  const buf = await loadPhotoBuffer(file.abs);
   const [exif, dims] = await Promise.all([readExif(buf), makeDerivativesFromBuffer(buf, id, opts)]);
   return {
     id,
