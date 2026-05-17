@@ -331,4 +331,8 @@ Within each album (see `--album-depth`), files sharing a basename are deduplicat
 
 ## License
 
-(add when you decide)
+MIT — see [LICENSE](LICENSE). Fork it, ship it, sell it, no strings.
+
+Third-party components retained at their own licenses inside `frontend/vendor/`:
+
+- [PhotoSwipe v5](https://photoswipe.com) — MIT
