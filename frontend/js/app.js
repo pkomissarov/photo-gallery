@@ -12,6 +12,7 @@ const LIGHTBOX_SIZES = [1024, 2048];
 const LIGHTBOX_MAX = 2048;
 const SCALES = ['small', 'medium', 'large'];
 const SCALE_STORAGE_KEY = 'gallery.scale';
+const EXPANDED_STORAGE_KEY = 'gallery.expanded';
 
 const SCALE_PARAMS = {
   small:  { rowHeight: 130, maxPerRow: 12 },
@@ -27,6 +28,7 @@ const state = {
   rows: [],
   totalHeight: 0,
   filter: { album: '', year: '', month: '', search: '' },
+  expanded: new Set(),
 };
 
 const $ = (id) => document.getElementById(id);
@@ -65,6 +67,7 @@ function thumbSrcset(p, sizes) {
 async function init() {
   currentScale = loadScale();
   applyScale(currentScale);
+  state.expanded = loadExpanded();
 
   let manifest;
   try {
@@ -199,6 +202,12 @@ function bindEvents() {
   });
 
   document.body.addEventListener('click', (e) => {
+    const toggle = e.target.closest('.tree__toggle');
+    if (toggle && !toggle.classList.contains('tree__toggle--empty')) {
+      const item = toggle.closest('.tree__item');
+      if (item) toggleExpanded(item.dataset.facet, item.dataset.key);
+      return;
+    }
     const treeItem = e.target.closest('.tree__item');
     if (treeItem) {
       applyFacet(treeItem.dataset.facet, treeItem.dataset.key);
@@ -252,6 +261,36 @@ function loadScale() {
 
 function saveScale(scale) {
   try { localStorage.setItem(SCALE_STORAGE_KEY, scale); } catch (_) {}
+}
+
+function loadExpanded() {
+  try {
+    const raw = localStorage.getItem(EXPANDED_STORAGE_KEY);
+    if (raw) return new Set(JSON.parse(raw));
+  } catch (_) { /* ignore */ }
+  return new Set();
+}
+
+function saveExpanded() {
+  try {
+    localStorage.setItem(EXPANDED_STORAGE_KEY, JSON.stringify([...state.expanded]));
+  } catch (_) { /* ignore */ }
+}
+
+function expandKey(facet, key) {
+  return `${facet}:${key}`;
+}
+
+function isExpanded(facet, key) {
+  return state.expanded.has(expandKey(facet, key));
+}
+
+function toggleExpanded(facet, key) {
+  const k = expandKey(facet, key);
+  if (state.expanded.has(k)) state.expanded.delete(k);
+  else state.expanded.add(k);
+  saveExpanded();
+  renderFacets();
 }
 
 function applyScale(scale) {
@@ -359,7 +398,7 @@ function renderFacets() {
   const albumRoot = buildHierarchy(state.photos, (p) => (p.album ? p.album.split('/') : []));
   const folderEl = $('folder-tree');
   folderEl.replaceChildren();
-  folderEl.appendChild(treeItem('Все', '', albumRoot.count, 'album', state.filter.album === ''));
+  folderEl.appendChild(treeItem('Все', '', albumRoot.count, 'album', state.filter.album === '', false, false));
   appendTreeChildren(folderEl, albumRoot, 'album', state.filter.album, [], '/', false);
 
   const dateRoot = buildHierarchy(state.photos, (p) => {
@@ -371,7 +410,7 @@ function renderFacets() {
   const activeDateKey = state.filter.month
     ? `${state.filter.year}-${state.filter.month}`
     : state.filter.year;
-  dateEl.appendChild(treeItem('Все', '', dateRoot.count, 'date', !activeDateKey));
+  dateEl.appendChild(treeItem('Все', '', dateRoot.count, 'date', !activeDateKey, false, false));
   appendTreeChildren(dateEl, dateRoot, 'date', activeDateKey, [], '-', true);
 }
 
@@ -383,21 +422,33 @@ function appendTreeChildren(container, node, facet, activeKey, pathSoFar, sep, d
     const path = [...pathSoFar, seg];
     const key = path.join(sep);
     const label = facet === 'date' && pathSoFar.length === 1 ? MONTHS[parseInt(seg, 10) - 1] : seg;
-    container.appendChild(treeItem(label, key, child.count, facet, key === activeKey));
-    if (child.children.size > 0) {
+    const hasChildren = child.children.size > 0;
+    const expanded = hasChildren && isExpanded(facet, key);
+    container.appendChild(treeItem(label, key, child.count, facet, key === activeKey, hasChildren, expanded));
+    if (hasChildren) {
       const childContainer = document.createElement('div');
-      childContainer.className = 'tree__children';
+      childContainer.className = 'tree__children' + (expanded ? ' tree__children--expanded' : '');
       appendTreeChildren(childContainer, child, facet, activeKey, path, sep, dateReverse);
       container.appendChild(childContainer);
     }
   }
 }
 
-function treeItem(label, key, count, facet, active) {
+function treeItem(label, key, count, facet, active, hasChildren, expanded) {
   const el = document.createElement('div');
   el.className = 'tree__item' + (active ? ' tree__item--active' : '');
   el.dataset.facet = facet;
   el.dataset.key = key;
+
+  const toggle = document.createElement('span');
+  if (hasChildren) {
+    toggle.className = 'tree__toggle' + (expanded ? ' tree__toggle--open' : '');
+    toggle.innerHTML = '<svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  } else {
+    toggle.className = 'tree__toggle tree__toggle--empty';
+  }
+  el.appendChild(toggle);
+
   const labelEl = document.createElement('span');
   labelEl.className = 'tree__label';
   labelEl.textContent = label;
