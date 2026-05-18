@@ -1,8 +1,8 @@
-# photo-gallery
+# NAS Gallery
 
 A static photo gallery for old NAS boxes — the kind that can't run Immich, PhotoPrism, or even Piwigo well. The heavy work happens once on a fast machine; the NAS just serves the resulting static files. Designed for libraries that have outgrown plain SMB but where running a real photo app is impractical.
 
-Tested at **49 843 photos / 1 824 videos / 95 albums** (mix of iPhone HEIC, DSLR JPG+RAW, video clips) served from a **WD My Cloud Gen 1** (Mindspeed Comcerto 2000, dual-core ARM Cortex-A9 @ 650 MHz, 226 MB RAM, Debian Jessie).
+Tested at **50k photos / 2k videos / 100 albums** (mix of iPhone HEIC, DSLR JPG+RAW, video clips) served from a **WD My Cloud Gen 1** (Clean Debian Jessie).
 
 Targets the same class of boxes that Immich/PhotoPrism won't touch:
 
@@ -67,14 +67,14 @@ brew install node@22 ffmpeg exiftool imagemagick
 # 2. Install Node deps
 cd indexer && /opt/homebrew/opt/node@22/bin/npm install && cd ..
 
-# 3. Mount your photo library somewhere on the build machine (skip if local)
+# 3. Mount your original photo library somewhere on the build machine (e.g. read-only NFS)
 sudo mkdir -p /Volumes/photo
-sudo mount -t nfs -o vers=3,ro,resvport 192.168.3.10:/srv/nfs/photo /Volumes/photo
+sudo mount -t nfs -o vers=3,ro,resvport nas.local:/srv/nfs/photo /Volumes/photo
 
-# 4. Build (indexer + frontend → ./dist)
+# 4. Build all needed html/js/thumbs → ./dist)
 ./build.sh /Volumes/photo ./dist
 
-# 5. Set up the web server (Apache shown — see examples/webserver/ for nginx/lighttpd)
+# 5. Set up the web server on your NAS (Apache shown — see examples/webserver/ for nginx/lighttpd)
 ssh root@nas
 mkdir -p /var/www/html/gallery
 cat > /etc/apache2/conf-available/gallery.conf <<'EOF'
