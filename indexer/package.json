@@ -1,5 +1,5 @@
 {
-  "name": "photo-gallery-indexer",
+  "name": "nas-gallery-indexer",
   "version": "0.1.0",
   "description": "Scans a photo directory and produces a static manifest + thumbnails consumed by the gallery frontend.",
   "private": true,

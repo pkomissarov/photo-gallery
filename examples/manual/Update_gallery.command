@@ -21,7 +21,7 @@
 set -e
 
 # ---- edit these ----
-PROJECT_DIR="${PROJECT_DIR:-$HOME/photo-gallery}"
+PROJECT_DIR="${PROJECT_DIR:-$HOME/nas-gallery}"
 INPUT="${INPUT:-/Volumes/photo}"
 OUTPUT="${OUTPUT:-$PROJECT_DIR/dist}"
 DEPLOY_DEST="${DEPLOY_DEST:-root@192.168.3.10:/var/www/html/gallery/}"

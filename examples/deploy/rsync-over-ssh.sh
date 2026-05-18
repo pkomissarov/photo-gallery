@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-SRC="${SRC:-$HOME/photo-gallery/dist/}"
+SRC="${SRC:-$HOME/nas-gallery/dist/}"
 DEST="${DEST:-root@192.168.3.10:/var/www/html/gallery/}"
 
 rsync -avh --progress --delete \

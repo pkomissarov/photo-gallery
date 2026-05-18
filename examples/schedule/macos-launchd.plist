@@ -5,17 +5,17 @@
 
   Install:
     cp examples/schedule/macos-launchd.plist \
-       ~/Library/LaunchAgents/com.local.photo-gallery.plist
+       ~/Library/LaunchAgents/com.local.nas-gallery.plist
     # Edit the file: paste your actual paths into ProgramArguments,
     # WorkingDirectory, and the StandardOut/Err logs.
-    launchctl load ~/Library/LaunchAgents/com.local.photo-gallery.plist
+    launchctl load ~/Library/LaunchAgents/com.local.nas-gallery.plist
 
   Verify:
-    launchctl list | grep photo-gallery
-    tail -f /tmp/photo-gallery.log
+    launchctl list | grep nas-gallery
+    tail -f /tmp/nas-gallery.log
 
   Stop:
-    launchctl unload ~/Library/LaunchAgents/com.local.photo-gallery.plist
+    launchctl unload ~/Library/LaunchAgents/com.local.nas-gallery.plist
 
   Notes:
     - StartCalendarInterval below runs nightly at 04:30. If the Mac
@@ -29,15 +29,15 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.local.photo-gallery</string>
+    <string>com.local.nas-gallery</string>
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/YOU/photo-gallery/examples/manual/Update_gallery.command</string>
+        <string>/Users/YOU/nas-gallery/examples/manual/Update_gallery.command</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/YOU/photo-gallery</string>
+    <string>/Users/YOU/nas-gallery</string>
 
     <key>StartCalendarInterval</key>
     <dict>
@@ -48,10 +48,10 @@
     </dict>
 
     <key>StandardOutPath</key>
-    <string>/tmp/photo-gallery.log</string>
+    <string>/tmp/nas-gallery.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/tmp/photo-gallery.err</string>
+    <string>/tmp/nas-gallery.err</string>
 
     <!-- Don't run multiple instances if a previous one is still going -->
     <key>RunAtLoad</key>

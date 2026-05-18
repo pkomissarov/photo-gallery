@@ -61,10 +61,12 @@ Piwigo runs PHP + MySQL on every page request. On a NAS with 256 MB of RAM it la
 Tested on macOS 15+ with Node 22. Linux support is planned (the indexer is portable; only the wrapper scripts and the scheduler are macOS-specific today).
 
 ```bash
-# 1. Install dependencies on your build machine
+# 1. Clone and install dependencies on your build machine
+git clone https://github.com/pkomissarov/nas-gallery.git
+cd nas-gallery
 brew install node@22 ffmpeg exiftool imagemagick
 
-# 2. Install Node deps
+# 2. Install Node deps for the indexer
 cd indexer && /opt/homebrew/opt/node@22/bin/npm install && cd ..
 
 # 3. Mount your original photo library somewhere on the build machine (e.g. read-only NFS)
@@ -245,13 +247,13 @@ The script `examples/manual/Update_gallery.command` runs `build.sh` and then `rs
 
 ```bash
 # 1. Copy the launcher to your Desktop (or anywhere convenient)
-cp ~/photo-gallery/examples/manual/Update_gallery.command ~/Desktop/
+cp ~/nas-gallery/examples/manual/Update_gallery.command ~/Desktop/
 
 # 2. Make it executable
 chmod +x ~/Desktop/Update_gallery.command
 
 # 3. Edit the four paths at the top of the file
-#       PROJECT_DIR  = where you cloned photo-gallery
+#       PROJECT_DIR  = where you cloned nas-gallery
 #       INPUT        = the mounted source library
 #       OUTPUT       = local build target on your SSD
 #       DEPLOY_DEST  = the web host: user@host:/path
@@ -295,12 +297,12 @@ If you'd rather have the gallery update itself nightly, point launchd at the sam
 
 ```bash
 cp examples/schedule/macos-launchd.plist \
-   ~/Library/LaunchAgents/com.local.photo-gallery.plist
+   ~/Library/LaunchAgents/com.local.nas-gallery.plist
 # edit the file: paths and time → save
-launchctl load ~/Library/LaunchAgents/com.local.photo-gallery.plist
+launchctl load ~/Library/LaunchAgents/com.local.nas-gallery.plist
 ```
 
-Logs go to `/tmp/photo-gallery.log` and `/tmp/photo-gallery.err`. If the Mac is asleep at the scheduled time, launchd will run the job at the next wake (provided Power Nap or AC power keeps it eligible).
+Logs go to `/tmp/nas-gallery.log` and `/tmp/nas-gallery.err`. If the Mac is asleep at the scheduled time, launchd will run the job at the next wake (provided Power Nap or AC power keeps it eligible).
 
 ## CLI reference
 

@@ -21,7 +21,7 @@
 
 set -euo pipefail
 
-SRC="${SRC:-$HOME/photo-gallery/dist/}"
+SRC="${SRC:-$HOME/nas-gallery/dist/}"
 DEST="${DEST:-/Volumes/gallery/}"
 
 if ! mountpoint -q "${DEST%/}" 2>/dev/null && [[ ! -d "${DEST}" ]]; then
