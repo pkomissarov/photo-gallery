@@ -1,5 +1,13 @@
 import PhotoSwipeLightbox from '../vendor/photoswipe/photoswipe-lightbox.esm.min.js';
 
+// Polyfill: Element.replaceChildren — Safari < 14 (iPad Air 1 / iOS 12)
+if (!Element.prototype.replaceChildren) {
+  Element.prototype.replaceChildren = function () {
+    while (this.lastChild) this.removeChild(this.lastChild);
+    if (arguments.length) this.append.apply(this, arguments);
+  };
+}
+
 const I18N = {
   ru: {
     title: 'Photos',
@@ -47,8 +55,10 @@ const LANG_STORAGE_KEY = 'gallery.lang';
 let currentLang = 'ru';
 
 function t(key) {
-  return (I18N[currentLang] && I18N[currentLang][key])
-      ?? (I18N.ru[key] ?? key);
+  const v = I18N[currentLang] && I18N[currentLang][key];
+  if (v != null) return v;
+  const f = I18N.ru[key];
+  return f != null ? f : key;
 }
 
 function monthName(monthNumber) {
@@ -288,9 +298,21 @@ function bindEvents() {
 }
 
 function observeLayoutChanges() {
-  if (resizeObserver) return;
-  resizeObserver = new ResizeObserver(() => buildLayout());
-  resizeObserver.observe($('grid'));
+  // ResizeObserver fires on container width changes (sidebar toggle, etc).
+  // Safari < 13.1 (iOS 12) lacks it — fall back to window resize, which is
+  // less responsive but covers the main case (window resize / orientation).
+  if (typeof ResizeObserver !== 'undefined') {
+    if (resizeObserver) return;
+    resizeObserver = new ResizeObserver(() => buildLayout());
+    resizeObserver.observe($('grid'));
+    return;
+  }
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(buildLayout, 150);
+  });
+  window.addEventListener('orientationchange', buildLayout);
 }
 
 function onScroll() {

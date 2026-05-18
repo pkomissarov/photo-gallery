@@ -331,8 +331,9 @@ Within each album (see `--album-depth`), files sharing a basename are deduplicat
 ## Limitations
 
 - **macOS-only wrappers today.** The indexer code is portable; the launcher scripts (`.command`) and the launchd plist are not. Linux (cron + `.desktop`) and Windows (`.bat` + Task Scheduler) wrappers are planned.
+- **iOS 12 and older are not supported** (iPad Air 1, iPad mini 2/3, iPhone 5s/6/6+). Thumbnails are WebP, which Safari only learned to decode in iOS 14. Originals delivered as HEIC don't render in `<img>` until Safari 17 / iOS 17. Older HEIC iPhone videos (HEVC/H.265) also won't play on pre-A9 hardware. iOS 13+ and modern Android browsers are fine.
 - **No upscaling.** A 400 × 300 source produces a 400 × 300 file for every requested thumb size larger than 400. Browser still picks the right size from `srcset`.
-- **No re-encode of originals.** HEIC originals open in browsers that support them (Safari, iOS) and download elsewhere (desktop Chrome / Firefox). RAW always downloads.
+- **No re-encode of originals.** HEIC originals open in browsers that support them (Safari 17+, iOS 17+) and download elsewhere. RAW always downloads. Videos use whatever codec they were shot with — HEVC clips need a hardware/software decoder on the playing device.
 - **No face detection or semantic search.** The current build is a navigation + viewing tool. CLIP-based search and face clustering are feasible follow-ups (the indexer can be extended without changing the front-end's manifest shape).
 
 ## License

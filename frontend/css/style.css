@@ -338,7 +338,8 @@ a { color: inherit; }
 
 @media (max-width: 768px) {
   .topbar__menu { display: inline-flex; }
-  .topbar__title { font-size: 0.95rem; }
+  .topbar__title { display: none; }
+  .topbar__count { display: none; }
   .layout { grid-template-columns: 1fr; }
   .sidebar {
     position: fixed;
